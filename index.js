@@ -8,7 +8,8 @@ require('dotenv').config()
 const port = process.env.PORT || 3000;  // env : This provide you an available port number in your environment
 
 const app = express();
-app.use(cors);
+app.use(cors());
+
 app.use(express.json());
 
 //Mongodb id 
