@@ -12,8 +12,6 @@ app.use(cors());
 
 app.use(express.json());
 
-//Mongodb id 
-//MongodbAtlas Database connection to Backend
 mongoose.connect(process.env.DBHOST)
   .then(() => {
     console.log("Connection success");
@@ -143,6 +141,8 @@ app.get('/addproducts', async (req, res) => {
   }
 });
 
+
+
 const productSchema = new mongoose.Schema({
   image_url: { type: String, required: true },
   title: { type: String, required: true },
@@ -157,9 +157,9 @@ const productSchema = new mongoose.Schema({
 const Product = mongoose.model('Product', productSchema);
 
 app.post("/products", async (req, res) => {
-  const { title, image_url, description, price, subTitle , rating , categoryid , availability } = req.body;
-   
-  const newProuctInf = new Product({
+  const { title, image_url, description, price, subTitle, rating, categoryid, availability } = req.body;
+
+  const newProduct = new Product({
       title,
       image_url,
       description,
@@ -168,12 +168,26 @@ app.post("/products", async (req, res) => {
       categoryid,
       availability,
       price
-  })
+  });
 
-   
-   let result = await newProuctInf.save()
-   res.send(result)
+  // Save the new product to the database
+  try {
+      const savedProduct = await newProduct.save();
+
+      // Find similar products based on category ID
+      const similarProducts = await Product.find({ categoryid: categoryid });
+
+      res.status(200).json({
+          message: "Product added successfully",
+          newProduct: savedProduct,
+          similarProducts: similarProducts
+      });
+  } catch (error) {
+      res.status(500).json({ error: "Error saving product to database" });
+  }
 });
+
+
 
 app.get("/products", async (req, res) => {
   const { title, image_url, subTitle ,   categoryid, } = req.query;
@@ -213,18 +227,51 @@ app.get("/products/:id", async (req, res) => {
   const productId = req.params.id;
 
   try {
+    // Find the product by its ID
     const product = await Product.findById(productId);
 
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    res.json(product);
+    // Find similar products based on the category ID of the product
+    const similarProducts = await Product.find({ categoryid: product.categoryid });
+
+    // Exclude the current product from the list of similar products
+    const filteredSimilarProducts = similarProducts.filter(function(similarProduct) {
+      // Only include products whose ID is not equal to the ID of the current product
+      return similarProduct._id.toString() !== productId;
+    });
+     
+    const simplifiedSimilarProducts = filteredSimilarProducts.map(function(similarProduct) {
+      // Create a new object containing only the required properties
+      return {
+        id: similarProduct._id,
+        image_url: similarProduct.image_url,
+        title: similarProduct.title,
+        price: similarProduct.price
+      };
+    });
+
+    const response = {
+      id: product._id,
+      image_url: product.image_url,
+      title: product.title,
+      price: product.price,
+      subTitle:product.subTitle,
+      description: product.description,
+      rating: product.rating,
+      availability: product.availability,
+      similar_products: simplifiedSimilarProducts
+    };
+
+   res.json(response)
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
+
 
 const ContactSchema = new mongoose.Schema({
   name: {
