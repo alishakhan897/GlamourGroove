@@ -76,55 +76,45 @@ const userSchema = new mongoose.Schema({
 
 const User = mongoose.model('users', userSchema);
 
+// Register a new user with fresh verification token
 app.post('/register', async (req, res) => {
   const { username, email, password } = req.body;
   console.log('Register Request Body:', req.body);
+
   if (!username || !email || !password) {
     return res.status(400).json({ error: 'Username, email, and password are required' });
   }
+
   try {
     // Check if the user already exists
     const existingUser = await User.findOne({ email });
 
-    // If user already exists, send an error response
-    if (existingUser) {
-      return res.status(400).json({ error: "User already exists" });
+    // If user already exists and is verified, block registration
+    if (existingUser && existingUser.verified) {
+      return res.status(400).json({ error: "User already exists and is verified" });
     }
 
-    // Generate a new verification token only if the user doesn't exist
+    // If user exists but not verified, update the user with a new verification token
     const verificationToken = crypto.randomBytes(20).toString('hex');
+    if (existingUser && !existingUser.verified) {
+      existingUser.verificationToken = verificationToken;
+      existingUser.password = await bcrypt.hash(password, 10); // Optionally update the password
+      await existingUser.save();
+    } else {
+      // Create a new user instance if not found
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const newUser = new User({
+        username,
+        email,
+        password: hashedPassword,
+        verificationToken,
+        verified: false
+      });
+      await newUser.save();
+    }
 
-    // Create a new user instance with hashed password and verification token
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = new User({
-      username,
-      email,
-      password: hashedPassword,
-      verificationToken,
-      verified: false
-
-    });
-
-    // Save the new user to the database
-    await newUser.save();
-
-
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASSWORD
-      },
-      tls: {
-        rejectUnauthorized: false // Change this to false to accept self-signed certificates
-      }
-    });
-
-    // Construct the verification link with the correct frontend URL and the generated verification token
+    // Send verification email
     const verificationLink = `https://glamourgroove.onrender.com/verify/${verificationToken}`;
-
-
-    // Send the verification email
     await transporter.sendMail({
       from: process.env.EMAIL_USER,
       to: email,
@@ -132,25 +122,21 @@ app.post('/register', async (req, res) => {
       html: `<p>Hello ${username},</p>
              <p>Please click <a href="${verificationLink}">here</a> to verify your email address.</p>
              <p>Thank you.</p>`
-  }).catch(emailError => {
+    }).catch(emailError => {
       console.error("Error sending email:", emailError);
-      // You may still want to send a success response here even if the email fails
-  });
-  
-    console.log("Registration email sent successfully");
+    });
 
-    // Respond with success message
     res.json({
       message: "Registration successful! Please check your email for verification.",
       verified: false,
-      username: newUser.username
+      username
     });
-
   } catch (err) {
-    console.error("Error during registration:", err.message); 
+    console.error("Error during registration:", err.message);
     res.status(500).json({ error: "Internal Server Error", details: err.message });
   }
 });
+
 
 
 
@@ -205,18 +191,16 @@ app.post('/login', async (req, res) => {
       return res.status(400).json({ error: "Invalid credentials" });
     }
 
+    // Check if the user is verified
     if (!dbUser.verified) {
-      return res.status(400).json({ error: "User not verified" });
+      return res.status(400).json({ error: "User not verified, please check your email to verify your account." });
     }
 
     // Compare the provided password with the stored hashed password
     const isPasswordMatched = await bcrypt.compare(password.trim(), dbUser.password.trim());
 
-    // Check if passwords match
     if (isPasswordMatched) {
-      const payload = {
-        email: dbUser.email, // Use the email from the database
-      };
+      const payload = { email: dbUser.email };
       const jwtToken = jwt.sign(payload, process.env.JWT_TOKEN);
       res.send({ jwtToken, verified: dbUser.verified });
     } else {
