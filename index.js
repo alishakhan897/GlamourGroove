@@ -119,8 +119,11 @@ app.post('/register', async (req, res) => {
       html: `<p>Hello ${username},</p>
              <p>Please click <a href="${verificationLink}">here</a> to verify your email address.</p>
              <p>Thank you.</p>`
-    });
-
+  }).catch(emailError => {
+      console.error("Error sending email:", emailError);
+      // You may still want to send a success response here even if the email fails
+  });
+  
     console.log("Registration email sent successfully");
 
     // Respond with success message
@@ -131,8 +134,8 @@ app.post('/register', async (req, res) => {
     });
 
   } catch (err) {
-    console.error("Error during registration:", JSON.stringify(err, null, 2)); 
-    res.status(500).json({ error: "Internal Server Error" });
+    console.error("Error during registration:", err.message); 
+    res.status(500).json({ error: "Internal Server Error", details: err.message });
   }
 });
 
