@@ -108,8 +108,21 @@ app.post('/register', async (req, res) => {
     // Save the new user to the database
     await newUser.save();
 
+
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASSWORD
+      },
+      tls: {
+        rejectUnauthorized: false // Change this to false to accept self-signed certificates
+      }
+    });
+
     // Construct the verification link with the correct frontend URL and the generated verification token
-    const verificationLink = `https://glamourgroove.onrender.com/${verificationToken}`;
+    const verificationLink = `https://glamourgroove.onrender.com/verify/${verificationToken}`;
+
 
     // Send the verification email
     await transporter.sendMail({
