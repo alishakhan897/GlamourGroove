@@ -109,7 +109,7 @@ app.post('/register', async (req, res) => {
     await newUser.save();
 
     // Construct the verification link with the correct frontend URL and the generated verification token
-    const verificationLink = `http://localhost:3000/verify/${verificationToken}`;
+    const verificationLink = `https://glamourgroove.onrender.com/${verificationToken}`;
 
     // Send the verification email
     await transporter.sendMail({
