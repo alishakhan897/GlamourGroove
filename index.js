@@ -156,7 +156,7 @@ app.get('/verify/:token', async (req, res) => {
     if (!user) {
       return res.status(404).send('Invalid or expired token');
     }
-    const loginUrl = 'https://frontendfashion-e1ugpraqg-alishakhan897s-projects.vercel.app/login';
+    const loginUrl = 'https://frontendfashion-alishakhan897s-projects.vercel.app/login';
 
     res.send(`Email verified successfully. Go back to the website and <a href="${loginUrl}">login</a> with your credentials.`);
 
