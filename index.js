@@ -88,20 +88,17 @@ app.post('/register', async (req, res) => {
   try {
     // Check if the user already exists
     const existingUser = await User.findOne({ email });
+    const verificationToken = crypto.randomBytes(20).toString('hex');
 
-    // If user already exists and is verified, block registration
     if (existingUser && existingUser.verified) {
       return res.status(400).json({ error: "User already exists and is verified" });
     }
 
-    // If user exists but not verified, update the user with a new verification token
-    const verificationToken = crypto.randomBytes(20).toString('hex');
     if (existingUser && !existingUser.verified) {
       existingUser.verificationToken = verificationToken;
-      existingUser.password = await bcrypt.hash(password, 10); // Optionally update the password
+      existingUser.password = await bcrypt.hash(password, 10);
       await existingUser.save();
     } else {
-      // Create a new user instance if not found
       const hashedPassword = await bcrypt.hash(password, 10);
       const newUser = new User({
         username,
@@ -113,27 +110,39 @@ app.post('/register', async (req, res) => {
       await newUser.save();
     }
 
-    // Send verification email
+    // ✅ Send verification email
     const verificationLink = `https://glamourgroove.onrender.com/verify/${verificationToken}`;
-    await transporter.sendMail({
-      from: process.env.EMAIL_USER,
-      to: email,
-      subject: 'Verify Your Email Address',
-      html: `<p>Hello ${username},</p>
-             <p>Please click <a href="${verificationLink}">here</a> to verify your email address.</p>
-             <p>Thank you.</p>`
-    }).catch(emailError => {
-      console.error("Error sending email:", emailError);
-    });
 
-    res.json({
-      message: "Registration successful! Please check your email for verification.",
-      verified: false,
-      username
-    });
+    try {
+      const info = await transporter.sendMail({
+        from: process.env.EMAIL_USER,
+        to: email,
+        subject: 'Verify Your Email Address',
+        html: `
+          <p>Hello ${username},</p>
+          <p>Please click <a href="${verificationLink}">here</a> to verify your email address.</p>
+          <p>Thank you.</p>
+        `
+      });
+
+      console.log("✅ Email sent successfully:", info.response);
+
+      return res.status(200).json({
+        message: 'Registration successful! Please check your email for verification.',
+        verified: false,
+        username,
+      });
+    } catch (emailError) {
+      console.error("❌ Error sending email:", emailError);
+      return res.status(500).json({
+        error: "Registration saved but email not sent. Please try again later.",
+        details: emailError.message,
+      });
+    }
+
   } catch (err) {
-    console.error("Error during registration:", err.message);
-    res.status(500).json({ error: "Internal Server Error", details: err.message });
+    console.error("❌ Error during registration:", err.message);
+    return res.status(500).json({ error: "Internal Server Error", details: err.message });
   }
 });
 
@@ -166,12 +175,6 @@ app.get('/verify/:token', async (req, res) => {
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
-
-
-
-
-
-
 
 
 
@@ -247,7 +250,11 @@ app.get('/addproducts', async (req, res) => {
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
-
+  
+const reviewSchema = new mongoose.Schema({
+  rating: { type: Number, required: true }, // Store individual rating
+  description: { type: String, required: true },
+})
 
 const productSchema = new mongoose.Schema({
   image_url: { type: String, required: true },
@@ -258,12 +265,14 @@ const productSchema = new mongoose.Schema({
   rating: String,
   categoryid: String,
   availability: String,
+  reviewsSec: [reviewSchema],
 });
 
-const Product = mongoose.model('Product', productSchema);
+const Product = mongoose.model('Product', productSchema); 
+
 
 app.post("/products", async (req, res) => {
-  const { title, image_url, description, price, subTitle, rating, categoryid, availability } = req.body;
+  const { title, image_url, description, price, subTitle, rating, categoryid, availability , reviewsSec=[]} = req.body;
 
   const newProduct = new Product({
     title,
@@ -273,7 +282,8 @@ app.post("/products", async (req, res) => {
     rating,
     categoryid,
     availability,
-    price
+    price ,
+    reviewsSec,
   });
 
   // Save the new product to the database
@@ -292,6 +302,41 @@ app.post("/products", async (req, res) => {
     res.status(500).json({ error: "Error saving product to database" });
   }
 });
+
+// Endpoint to add a review to an existing product
+app.post("/products/:id/review", async (req, res) => {
+  const productId = req.params.id;
+  const { rating, description } = req.body;
+
+  try {
+    // Validate the input
+    if (!rating || !description) {
+      return res.status(400).json({ error: "Rating and description are required." });
+    }
+
+    // Find the product by ID and push the new review into the reviewsSec array
+    const updatedProduct = await Product.findByIdAndUpdate(
+      productId,
+      { $push: { reviewsSec: { rating, description } } },
+      { new: true } // This option returns the updated document
+    );
+
+    if (!updatedProduct) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    res.status(200).json({
+      message: "Review added successfully",
+      product: updatedProduct
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error adding review" });
+  }
+});
+
+
+
 
 app.get("/products", async (req, res) => {
   const { title, image_url, subTitle, categoryid, } = req.query;
@@ -339,6 +384,7 @@ app.get("/products/:id", async (req, res) => {
 
     // Find similar products based on the category ID of the product
     const similarProducts = await Product.find({ categoryid: product.categoryid });
+    
 
     // Exclude the current product from the list of similar products
     const filteredSimilarProducts = similarProducts.filter(function (similarProduct) {
@@ -365,7 +411,8 @@ app.get("/products/:id", async (req, res) => {
       description: product.description,
       rating: product.rating,
       availability: product.availability,
-      similar_products: simplifiedSimilarProducts
+      similar_products: simplifiedSimilarProducts ,
+      review_product:product.reviewsSec
     };
 
     res.json(response)
